@@ -7,7 +7,217 @@
 <script src="https://d3js.org/d3.v4.js"></script>
 <script src="https://dagrejs.github.io/project/dagre-d3/latest/dagre-d3.js"></script>
 <script src="https://dagrejs.github.io/project/dagre/latest/dagre.js"></script>
+<script src="https://github.com/nylki/lindenmayer/releases/download/15.3/lindenmayer.browser.js"></script>
 
+<script type="text/javascript">
+function startHandler()
+{
+	var lsys = new LSystem({});
+	// Iterate the L-System two times and log the result.
+	var iter = parseInt(document.getElementById('iterations').value);
+	var axiom = document.getElementById('axiom').value;
+	lsys.setAxiom(axiom);
+
+	for (var i=1; i<=5; i++)
+	{
+		var rule = document.getElementById('rule' + i).value;
+		if (rule && rule.length !== 0)
+		{
+			lsys.setProduction(rule.split('=')[0], rule.split('=')[1]);
+		}
+	}
+
+	let result = lsys.iterate(iter);
+
+
+	//result = "[BB]1[[BB]1[AB]1B-2B]1B-2";
+	//result = "[BB]1[AB]1B-2";
+	console.log(result);
+
+	draw(result);
+}
+
+function Graph()
+{
+	this.list = new Array();
+	this.inNodes = new Array();
+	this.outNodes = new Array();
+	this.to = null;
+	this.idx = -1;
+}
+
+
+function draw(s)
+{
+	var state = new Array();
+
+	var graph = new Graph();
+	var nodes = new Array();
+	for (var i = 0; i < s.length; i++)
+	{
+		if (/[a-zA-Z]/.test(s[i]))
+		{
+			graph.list.push(new Graph());
+			graph.list[graph.list.length - 1].idx = nodes.length;
+			nodes.push(s[i]);
+		}
+		else if (s[i] == '-')
+		{
+			graph.list[graph.list.length - 1].to = -parseInt(s[i + 1]);
+			i++;
+		}
+		else if (/[0-9]/.test(s[i]))
+		{
+			graph.list[graph.list.length - 1].to = parseInt(s[i]);
+		}
+		else if (s[i] == '[')
+		{
+			state.push(graph);
+			graph = new Graph();
+		}
+		else if (s[i] == ']')
+		{
+			var parent = state.pop();
+			parent.list.push(graph);
+			graph = parent;
+		}
+	}
+	console.log(graph);
+	calcInOutNodes(graph);
+
+	console.log(graph);
+	console.log(nodes);
+
+	// Set up zoom support
+	var svg = d3.select("svg"),
+	    inner = d3.select("svg g"),
+	    zoom = d3.zoom().on("zoom", function() {
+	      inner.attr("transform", d3.event.transform);
+	    });
+	svg.call(zoom);
+
+	// Create and configure the renderer
+	var render = dagreD3.render();
+
+	var g = new dagre.graphlib.Graph();
+	// Set an object for the graph label
+	g.setGraph({});
+
+	// Default to assigning a new object as a label for each new edge.
+	g.setDefaultEdgeLabel(function() { return {}; });
+
+	// Add nodes to the graph. The first argument is the node id. The second is
+	// metadata about the node. In this case we're going to add labels to each of
+	// our nodes.
+
+	for (var i = 0; i < nodes.length; i++)
+	{
+		g.setNode(i.toString(), { label: nodes[i], rx: 5, ry: 5});
+	}
+
+	connect(g, graph);
+/*
+	g.setNode("1",    { label: "A", rx: 5, ry: 5});
+	g.setNode("2",    { label: "B", rx: 5, ry: 5});
+	g.setNode("3",    { label: "C", rx: 5, ry: 5});
+	g.setNode("4",    { label: "D", rx: 5, ry: 5});
+	g.setNode("5",    { label: "E", rx: 5, ry: 5});
+	g.setNode("6",    { label: "F", rx: 5, ry: 5});
+
+	// Add edges to the graph.
+	g.setEdge("1",   "4");
+	g.setEdge("2",   "4");
+	g.setEdge("3",   "4");
+
+	g.setEdge("1",   "5");
+	g.setEdge("2",   "5");
+	g.setEdge("3",   "5");
+
+	g.setEdge("1",   "6");
+	g.setEdge("2",   "6");
+	g.setEdge("3",   "6");
+*/
+	dagre.layout(g);
+
+
+	// Render the graph into svg g
+	d3.select("svg g").call(render, g);
+}
+
+function connect(g, graph)
+{
+	for (var i = 0; i < graph.list.length; i++)
+	{
+		if (!(graph.list[i].to === null))
+		{
+			var j = i + graph.list[i].to;
+			console.log(i, j);
+			for (var n in graph.list[i].outNodes)
+			{
+				for (var m in graph.list[j].inNodes)
+				{
+					//console.log(graph.list[i].outNodes[n], graph.list[j].inNodes[m]);
+					g.setEdge(graph.list[i].outNodes[n].toString(), graph.list[j].inNodes[m].toString());
+				}
+			}
+		}
+		if (graph.list[i].idx == -1)
+		{
+			connect(g, graph.list[i]);
+		}
+	}
+}
+
+function calcInOutNodes(g)
+{
+	if (g.idx != -1)
+	{
+		g.inNodes.push(g.idx);
+		g.outNodes.push(g.idx);
+	}
+	else
+	{
+		for (var i = 0; i < g.list.length; i++)
+		{
+			calcInOutNodes(g.list[i]);
+			var isInNode = true;
+			for (var j = 0; j < i; j++)
+			{
+				if (j + g.list[j].to == i)
+				{
+					isInNode = false;
+				}
+			}
+			/*
+			if (g.list[i].idx != -1) // is a node
+			{
+				if (isInNode)
+				{
+					g.inNodes.push(g.list[i].idx);
+				}
+				if (g.list[i].to <= 0)
+				{
+					g.outNodes.push(g.list[i].idx);
+				}
+			}
+			else // is a subgraph
+			{
+				*/
+			if (isInNode)
+			{
+				g.inNodes.push.apply(g.inNodes, g.list[i].inNodes);
+			}
+			if (g.list[i].to <= 0)
+			{
+				g.outNodes.push.apply(g.outNodes, g.list[i].outNodes);
+			}
+			
+		}
+	}
+
+}
+
+</script>
 <style>
 svg {
   border: 1px solid #999;
@@ -34,59 +244,53 @@ svg {
 </style>
 
 <body>
+<div>
+   <table border="0" cellspacing="1" cellpadding="1">
+      <tr>
+         <td><span>Iterations:</span></td>
+         <td>
+            <input id="iterations" type="text" value="5" style="width:4em" />
+         </td>
+      </tr>
+      <tr>
+         <td><span>Axoim:</span></td>
+         <td><input id="axiom" type="text" value="A" style="width:12em"/></td>
+      </tr>
+      <tr>
+         <td><span>Rule1:</span></td>
+         <td><input id="rule1" type="text" value="A=[BB]1[AB]1B-2" style="width:30em" /></td>
+      </tr>
+      <tr>
+         <td><span>Rule2:</span></td>
+         <td><input id="rule2" type="text" value="" style="width:30em" /></td>
+      </tr>
+      <tr>
+         <td><span>Rule3:</span></td>
+         <td><input id="rule3" type="text" value="" style="width:30em" /></td>
+      </tr>
+      <tr>
+         <td><span>Rule4:</span></td>
+         <td><input id="rule4" type="text" value="" style="width:30em" /></td>
+      </tr>
+      <tr>
+         <td><span>Rule5:</span></td>
+         <td><input id="rule5" type="text" value="" style="width:30em" /></td>
+      </tr>
+      <tr>
+         <td colspan="2"><input id="start" type="button" value="Start" onclick="startHandler()"/></td>
+      </tr>
+   </table>
+</div>
 
+<br />
 <svg width=800 height=800>
   <g/>
 </svg>
 
 <script>
 
-// Set up zoom support
-var svg = d3.select("svg"),
-    inner = d3.select("svg g"),
-    zoom = d3.zoom().on("zoom", function() {
-      inner.attr("transform", d3.event.transform);
-    });
-svg.call(zoom);
-
-// Create and configure the renderer
-var render = dagreD3.render();
-
-var g = new dagre.graphlib.Graph();
-// Set an object for the graph label
-g.setGraph({});
-
-// Default to assigning a new object as a label for each new edge.
-g.setDefaultEdgeLabel(function() { return {}; });
-
-// Add nodes to the graph. The first argument is the node id. The second is
-// metadata about the node. In this case we're going to add labels to each of
-// our nodes.
-g.setNode("1",    { label: "A", rx: 5, ry: 5});
-g.setNode("2",    { label: "B"});
-g.setNode("3",    { label: "C"});
-g.setNode("4",    { label: "D"});
-g.setNode("5",    { label: "E"});
-g.setNode("6",    { label: "F"});
-
-// Add edges to the graph.
-g.setEdge("1",   "4");
-g.setEdge("2",   "4");
-g.setEdge("3",   "4");
-
-g.setEdge("1",   "5");
-g.setEdge("2",   "5");
-g.setEdge("3",   "5");
-
-g.setEdge("1",   "6");
-g.setEdge("2",   "6");
-g.setEdge("3",   "6");
-
-dagre.layout(g);
 
 
-    // Render the graph into svg g
-d3.select("svg g").call(render, g);
 
 
 
